@@ -1,0 +1,35 @@
+// master-site server — unified AI MASystem landing page + lead capture.
+const http = require('http');
+const fs = require('fs');
+const path = require('path');
+const PUBLIC = path.join(__dirname, 'public');
+const MIME = { '.html': 'text/html', '.js': 'application/javascript', '.css': 'text/css' };
+function send(res, code, body, type = 'application/json') {
+  res.writeHead(code, { 'Content-Type': type });
+  if (Buffer.isBuffer(body)) return res.end(body);
+  if (typeof body === 'string') return res.end(body);
+  res.end(JSON.stringify(body));
+}
+const server = http.createServer(async (req, res) => {
+  const url = new URL(req.url, 'http://localhost');
+  async function body() { let b = ''; for await (const c of req) b += c; try { return JSON.parse(b || '{}'); } catch { return {}; } }
+  // Lead capture -> forward to biz-site (which emails + stores)
+  if (req.method === 'POST' && url.pathname === '/api/lead') {
+    const b = await body();
+    if (!b.name || !b.email) return send(res, 400, { error: 'name + email required' });
+    try {
+      await fetch('http://localhost:8070/api/lead', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: b.name, company: b.company || '', email: b.email, phone: b.phone || '', interest: b.interest || '', message: b.message || '' })
+      });
+      return send(res, 200, { ok: true });
+    } catch (e) { return send(res, 500, { ok: false, error: e.message }); }
+  }
+  // Static
+  let p = url.pathname === '/' ? '/index.html' : url.pathname;
+  const fp = path.join(PUBLIC, p);
+  if (fs.existsSync(fp) && fs.statSync(fp).isFile()) return send(res, 200, fs.readFileSync(fp), MIME[path.extname(fp)] || 'text/plain');
+  return send(res, 404, 'not found');
+});
+const PORT = 8099;
+server.listen(PORT, '0.0.0.0', () => console.log('Master site (AI MASystem) on ' + PORT));
